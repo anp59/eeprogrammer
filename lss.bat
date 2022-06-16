@@ -1,0 +1,1 @@
+C:/Users/ANP/.platformio/packages/toolchain-atmelavr/bin/avr-objdump -d -S c:/Users/ANP/Documents/PlatformIO/AVRProjects/eeprogrammer/.pio/build/nanoatmega328/firmware.elf > c:/Users/ANP/Documents/PlatformIO/AVRProjects/eeprogrammer/.pio/build/nanoatmega328/firmware.lss
