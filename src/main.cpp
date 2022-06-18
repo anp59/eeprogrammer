@@ -158,6 +158,51 @@ uint8_t eeprom_read_byte()
     return byte;
 }
 
+unsigned int eeprom_read_id(bool *success_ptr)
+{
+        unsigned int id = 0;
+        unsigned int test_id = 0;
+
+        // For comparison, read the address with A9 high
+        uint16_t address = 1 << 9;
+        uint16_t test_address = address; 
+        uint16_t max_address = address + 1;
+        
+        if (test_address < 0xFFFF)
+        {
+            eeprom_set_address(test_address);
+            test_id = eeprom_read_byte();
+            eeprom_set_address(++test_address);
+            test_id <<= 8;
+            test_id |= eeprom_read_byte();
+        }
+        // Enable HV on A9 for identify mode
+        eeprom_chip_deselect();
+        begin_read();
+        enable_A9_HV();
+        _delay_us(10);
+        do
+        {
+            eeprom_set_address(address);
+            _delay_us(5);
+            eeprom_chip_select();
+            _delay_us(5);
+            ++address;
+            id <<= 8;
+            id |= eeprom_data_in();
+            eeprom_chip_deselect();
+        } while (address <= max_address);
+        disable_A9_HV();
+        end_read();
+
+        if (success_ptr)
+        {
+            *success_ptr = (test_id != id);
+        }
+
+        return id;
+}
+
 void eeprom_read_to_buffer(uint16_t address)
 {
     // todo: max Adresse pruefen
@@ -214,7 +259,8 @@ void setup()
 
     SPI.begin();
     //SPI.beginTransaction(SPISettings(100000, MSBFIRST, SPI_MODE0));
-
+    delay(500);
+    
     if ( !SD.begin(SS) )
         Serial.println("Initialization failed");
 
@@ -231,10 +277,16 @@ void setup()
     //hexDump("Hexdump", buffer, 0, len);
     f.close();
     eeprom_read_to_buffer(0x0000);
+    eeprom_read_to_buffer(0x0800);
     eeprom_read_to_buffer(0x1000);
     eeprom_read_to_buffer(0x2000);
-    eeprom_read_to_buffer(0xA000);
+    eeprom_read_to_buffer(0x4000);
+    eeprom_read_to_buffer(0x8000);
     eeprom_read_to_buffer(0xFF00);
+
+    bool success = false;
+    unsigned id = eeprom_read_id(&success);
+    Serial.println(id, HEX);
 }
 
 // the loop function runs over and over again forever
