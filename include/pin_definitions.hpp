@@ -428,8 +428,8 @@ inline typename port_type<port>::type get_port( const port_tag &tag)
     /// This template receives a list_builder, or list as template argument. A list contains (port, bits)-pairs
     /// and this function will combine all bits for each port mentioned in the list and then assign the accumulated
     /// bits value to the data direction register for those ports.
-    template< typename list_builder>
-    inline extern void init_as_output( const list_builder &)
+    template <typename list_builder>
+    inline extern void init_as_output(const list_builder &) 
     {
         detail::for_each_port_operator< typename list_builder::as_cons, assign, tag_ddr>::operate();
     }

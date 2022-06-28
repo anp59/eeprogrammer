@@ -316,6 +316,30 @@ void blank_check(uint16_t max_address)
     else Serial.println("Erasing ok!");
 }
 
+void programm( uint16_t address, uint8_t *buf, int len)
+{
+    int offset = 0;
+
+    eeprom_set_data_out();
+    set(OE_pin | CE_pin);
+    enable_OE_VPP();    
+    do
+    {
+        eeprom_set_address(address + offset);
+        delayMicroseconds(3);       // Tds
+        eeprom_data_out(buf[offset++]);
+        delayMicroseconds(5);       // Tas
+        write(CE_pin, 0);
+        delayMicroseconds(100);     // Tpwp
+        write(CE_pin, 1);
+        delayMicroseconds(3); // Tdh / Tah / Toeh
+
+    } while (offset < len);
+    set(OE_pin | CE_pin);
+    disable_OE_VPP();
+    eeprom_set_data_in();
+}
+
 void setup()
 {
     // initialize serial
@@ -341,11 +365,12 @@ void setup()
     int len = f.readBytes(buffer, 20);
     buffer[len] = 0;
     Serial.println((char*)buffer);
-    //hexDump("Hexdump", buffer, 0, len);
+    hexDump("Hexdump", buffer, 0, len);
     f.close();
     //hexDump("SDread", buffer, 0, sizeof(buffer));
     // eeprom_read_to_buffer(0x0000);
-    
+    programm(0x0040, buffer, 20);  
+
     eeprom_read_bytes_at(0x0000, buffer, sizeof(buffer));
     hexDump("Test", buffer, 0x0000, sizeof(buffer));
 
@@ -353,13 +378,14 @@ void setup()
 
     delay(1000);
     Serial.println("Erasing ...");
-    //erase();
+    erase();
+
     delay(500);
     Serial.println("Reading ...");
     eeprom_read_bytes_at(0x0000, buffer, sizeof(buffer));
     hexDump("after Erase", buffer, 0x0000, sizeof(buffer));
     Serial.println("ende");
-    blank_check(0xFFFF);
+    //blank_check(0xFFFF);
     // bool success = false;
     // unsigned id = eeprom_read_id(&success);
     // Serial.println(id, HEX);
