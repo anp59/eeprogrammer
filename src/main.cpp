@@ -1,30 +1,30 @@
 /*
 * This code assumes following pin layout for the Arduino Nano V3:
 
-* +--------+--------+----------+----------------------+----------+
-* |Name    |GPIO    |Signal    |Funktionsbaustein     |Direction |
-* +--------+--------+----------+----------------------+----------+
-* | D0     | PD0    | Rx       | UART                 | I        |
-* | D1     | PD1    | Tx       | UART                 | O        |
-* | D2     | PD2    | CE       | EEPROM               | O        |
-* | D3     | PD3    | A9_VPE   | EEPROM               | O        |
-* | D4     | PD4    | OE       | EEPROM               | O        |
-* | D5     | PD5    | OE_VPP   | EEPROM               | O        |
-* | D6     | PD6    | Data_6   | EEPROM               | I/O      |
-* | D7     | PD7    | Data_7   | EEPROM               | I/O      |
-* | D8     | PB0    | VPP_VPE  | Umschaltung VPP-VPE  | O        |
-* | D9     | PB1    | LATCH    | Latch_595            | O        |
-* | D10    | PB2    | SS       | SD_CS                | O        |
-* | D11    | PB3    | MOSI     | SD_MOSI / Data_595   | O        |
-* | D12    | PB4    | MISO     | SD_Miso              | I        |
-* | D13    | PB5    | SCK      | SD_CLK / Clock_|595  | O        |
-* | A0     | PC0    | Data_0   | EEPROM               | I/O      |
-* | A1     | PC1    | Data_1   | EEPROM               | I/O      |
-* | A2     | PC2    | Data_2   | EEPROM               | I/O      |
-* | A3     | PC3    | Data_3   | EEPROM               | I/O      |
-* | A4     | PC4    | Data_4   | EEPROM               | I/O      |
-* | A5     | PC5    | Data_5   | EEPROM               | I/O      |
-* +--------+--------+----------+----------------------+----------+
+* +--------+--------+----------+----------------------+----------+------+
+* |Name    |GPIO    |Signal    |Funktionsbaustein     |Direction | init |
+* +--------+--------+----------+----------------------+----------+------+
+* | D0     | PD0    | Rx       | UART                 | I        |      |
+* | D1     | PD1    | Tx       | UART                 | O        |      |
+* | D2     | PD2    | CE       | EEPROM               | O        |   H  |
+* | D3     | PD3    | A9_VPE   | EEPROM               | O        |   L  |
+* | D4     | PD4    | OE       | EEPROM               | O        |   H  |
+* | D5     | PD5    | OE_VPP   | EEPROM               | O        |   L  |
+* | D6     | PD6    | Data_6   | EEPROM               | I/O      |      |
+* | D7     | PD7    | Data_7   | EEPROM               | I/O      |      |
+* | D8     | PB0    | VPP_VPE  | Umschaltung VPP-VPE  | O        |   L  |
+* | D9     | PB1    | LATCH    | Latch_595            | O        |   H  |
+* | D10    | PB2    | SS       | SD_CS                | O        |   H  |
+* | D11    | PB3    | MOSI     | SD_MOSI / Data_595   | O        |      |
+* | D12    | PB4    | MISO     | SD_Miso              | I        |      |
+* | D13    | PB5    | SCK      | SD_CLK / Clock_|595  | O        |      |
+* | A0     | PC0    | Data_0   | EEPROM               | I/O      |      |
+* | A1     | PC1    | Data_1   | EEPROM               | I/O      |      |
+* | A2     | PC2    | Data_2   | EEPROM               | I/O      |      |
+* | A3     | PC3    | Data_3   | EEPROM               | I/O      |      |
+* | A4     | PC4    | Data_4   | EEPROM               | I/O      |      |
+* | A5     | PC5    | Data_5   | EEPROM               | I/O      |      |
+* +--------+--------+----------+----------------------+----------+------+
 */
 
 #include <Arduino.h>
@@ -38,13 +38,16 @@ uint8_t buffer[256];
 
 void hexDump(const char *desc, void *addr, unsigned int offset, int len);
 
-DECLARE_PIN (CE_pin, D, 2);
-DECLARE_PIN (A9_VPE_pin, D, 3);
-DECLARE_PIN (OE_pin, D, 4);
-DECLARE_PIN (OE_VPP_pin, D, 5);
-DECLARE_PIN_GROUP(DATA_low, C, 0, 6);
-DECLARE_PIN_GROUP(DATA_high, D, 6, 2);
-DECLARE_PIN(LATCH_pin, B, 1)
+DECLARE_PIN (CE_pin, D, 2)
+DECLARE_PIN (A9_VPE_pin, D, 3)
+DECLARE_PIN (OE_pin, D, 4)
+DECLARE_PIN (OE_VPP_pin, D, 5)
+DECLARE_PIN (VPP_VPE_pin, B, 0)
+DECLARE_PIN (LATCH_pin, B, 1)
+DECLARE_PIN (SS_pin, B, 2)
+DECLARE_PIN_GROUP (DATA_low, C, 0, 6)
+DECLARE_PIN_GROUP (DATA_high, D, 6, 2)
+
 
 bool is_writing = false;
 
@@ -62,22 +65,19 @@ void disable_A9_HV()
 void enable_OE_VPP()
 {
     write(OE_VPP_pin, 1);
-    write(OE_pin, 1);
+    //write(OE_pin, 1);
 }
 void disable_OE_VPP()
 {
     write(OE_VPP_pin, 0);
-    write(OE_pin, 0);
+    //write(OE_pin, 0);
 }
 
 void eeprom_init_pins()
 {
-    make_output(CE_pin);
-    make_output(A9_VPE_pin);
-    disable_A9_HV();
-    make_output(OE_pin);
-    make_output(OE_VPP_pin);
-    disable_OE_VPP();
+    set(CE_pin | OE_pin /*| SS_pin*/ | LATCH_pin );     // sicherstellen, dass Ausgaenge HIGH sind
+    reset(A9_VPE_pin | OE_VPP_pin | VPP_VPE_pin);   // sicherstellen, dass Ausgaenge LOW sind
+    init_as_output(CE_pin | OE_pin | A9_VPE_pin | OE_VPP_pin /*| SS_pin*/ | LATCH_pin | VPP_VPE_pin);
 }
 void eeprom_output_enable() { 
     write(OE_pin, 0); 
@@ -140,6 +140,7 @@ void end_write()
 void begin_read()
 {
     end_write();
+    eeprom_chip_select();
     eeprom_output_enable();
 }
 
@@ -203,6 +204,26 @@ unsigned int eeprom_read_id(bool *success_ptr)
         return id;
 }
 
+void eeprom_read_bytes_at(const uint16_t address, uint8_t *buf, const int len)
+{
+    int offset = 0;
+    
+    eeprom_set_data_in();
+    
+    while ( offset < len )
+    {
+        set(OE_pin | CE_pin);
+        eeprom_set_address(address + offset);
+        write(CE_pin, 0);
+        write(OE_pin, 0);
+        delayMicroseconds(3);   // Toe
+        buf[offset] = eeprom_data_in();
+        offset++;
+    }
+    set(OE_pin | CE_pin); 
+}
+
+
 void eeprom_read_to_buffer(uint16_t address)
 {
     // todo: max Adresse pruefen
@@ -212,17 +233,6 @@ void eeprom_read_to_buffer(uint16_t address)
     begin_read();
     do
     {
-        // flow_control_t status;
-        // do
-        // {
-        //     status = uart_check_flow_control();
-        //     if (status == FLOW_BREAK)
-        //     {
-        //         uart_puts_P(PSTR("! Read aborted\n"));
-        //         goto abort_reading;
-        //     }
-        // } while (status == FLOW_PAUSE);
-
         eeprom_set_address(address);
         eeprom_chip_select();
         ++address;
@@ -235,32 +245,89 @@ void eeprom_read_to_buffer(uint16_t address)
     hexDump("EEPROM Read", buffer, offset, sizeof(buffer));
 }
 
+void read_id() {
+    uint8_t id_byte1 = 0;
+    uint8_t id_byte2 = 0;
+
+    eeprom_set_data_in();
+    set(OE_pin | CE_pin);
+    eeprom_set_address(0);
+    enable_A9_HV();
+    delayMicroseconds(5);
+    write(CE_pin, 0);
+    
+    delayMicroseconds(5);
+    write(OE_pin, 0);
+    delayMicroseconds(5); // Toe
+    id_byte1 = eeprom_data_in();
+    write(OE_pin, 1);
+
+    eeprom_set_address(1);
+    delayMicroseconds(5);
+    write(OE_pin, 0);
+    delayMicroseconds(5); // Toe
+    id_byte2 = eeprom_data_in();
+    write(OE_pin, 1);
+    disable_A9_HV();
+    write(CE_pin, 1);
+    Serial.print("ID = ");
+    Serial.print(id_byte1, HEX);
+    Serial.print(" / ");
+    Serial.println(id_byte2, HEX);
+}
+
+void erase()
+{
+    eeprom_set_data_in();
+    set(OE_pin | CE_pin);
+    eeprom_set_address(0);
+    enable_A9_HV();
+    enable_OE_VPP();
+    delayMicroseconds(5);   //Toes OE/VPP setup time, min 2us
+    write(CE_pin, 0);
+    delay(100);             // Tpwe erase puls width (95...105 ms)
+    write(CE_pin, 1);
+    delayMicroseconds(5);   // Toeh
+    disable_OE_VPP();       // OE bleibt H
+    disable_A9_HV();
+}
+
+void blank_check(uint16_t max_address)
+{
+    uint16_t address = 0;
+    uint8_t b = 0;
+    
+    eeprom_set_data_in();
+
+    do {
+        set(OE_pin | CE_pin);
+        eeprom_set_address(address);
+        write(CE_pin, 0);
+        write(OE_pin, 0);
+        delayMicroseconds(3); // Toe
+        if ( (b = eeprom_data_in()) != 0xFF ) 
+            break;
+    } while ( address++ < max_address );
+    set(OE_pin | CE_pin);
+    if ( b != 0xFF ) {
+        Serial.print("Erasing failed on address: ");
+        Serial.println(address-1, HEX);
+    }
+    else Serial.println("Erasing ok!");
+}
+
 void setup()
 {
     // initialize serial
     Serial.begin(115200);
-    
-    //pinMode(LED, OUTPUT);
+
     eeprom_init_pins();
     eeprom_set_data_in();
-    // uint8_t data = eeprom_data_in();
-    // eeprom_set_data_out();
-    // eeprom_data_out(data);
-
-
-    pinMode(SS, OUTPUT);
-    digitalWrite(SS, HIGH); 
     
-    make_output(LATCH_pin);
-    //pinMode(LATCH, OUTPUT);
-    write(LATCH_pin, 1);
-    //digitalWrite(LATCH, HIGH);
-
-
     SPI.begin();
     //SPI.beginTransaction(SPISettings(100000, MSBFIRST, SPI_MODE0));
-    delay(500);
-    
+    //delay(500);
+
     if ( !SD.begin(SS) )
         Serial.println("Initialization failed");
 
@@ -276,17 +343,26 @@ void setup()
     Serial.println((char*)buffer);
     //hexDump("Hexdump", buffer, 0, len);
     f.close();
-    eeprom_read_to_buffer(0x0000);
-    eeprom_read_to_buffer(0x0800);
-    eeprom_read_to_buffer(0x1000);
-    eeprom_read_to_buffer(0x2000);
-    eeprom_read_to_buffer(0x4000);
-    eeprom_read_to_buffer(0x8000);
-    eeprom_read_to_buffer(0xFF00);
+    //hexDump("SDread", buffer, 0, sizeof(buffer));
+    // eeprom_read_to_buffer(0x0000);
+    
+    eeprom_read_bytes_at(0x0000, buffer, sizeof(buffer));
+    hexDump("Test", buffer, 0x0000, sizeof(buffer));
 
-    bool success = false;
-    unsigned id = eeprom_read_id(&success);
-    Serial.println(id, HEX);
+    read_id();
+
+    delay(1000);
+    Serial.println("Erasing ...");
+    //erase();
+    delay(500);
+    Serial.println("Reading ...");
+    eeprom_read_bytes_at(0x0000, buffer, sizeof(buffer));
+    hexDump("after Erase", buffer, 0x0000, sizeof(buffer));
+    Serial.println("ende");
+    blank_check(0xFFFF);
+    // bool success = false;
+    // unsigned id = eeprom_read_id(&success);
+    // Serial.println(id, HEX);
 }
 
 // the loop function runs over and over again forever
@@ -329,8 +405,8 @@ void loop()
 void hexDump(const char *desc, void *addr, unsigned int offset, int len)
 {
     int i;
-    unsigned char buff[17];
-    char sprintfbuffer[12];
+    unsigned char ascii_buffer[17]; // ASCII Block
+    char sprintfbuffer[14];
     unsigned char *pc = (unsigned char *)addr;
 
     if (len == 0)
@@ -350,15 +426,16 @@ void hexDump(const char *desc, void *addr, unsigned int offset, int len)
             // Just don't print ASCII for the zeroth line.
             if (i != 0) {
                 //printf("  %s\n", buff);
-                Serial.print(" | "); Serial.println((char*)buff);
+                Serial.print(" | ");
+                Serial.println((char *)ascii_buffer);
             }
             // Output the offset.
             //printf("  %08x ", offset);
-            sprintf(sprintfbuffer, "  0x%08x ", offset);
+            sprintf(sprintfbuffer, "  0x%08X ", offset);
             Serial.print(sprintfbuffer);
             offset += 16;
         }
-
+ 
         // Now the hex code for the specific character.
         //printf(" %02x", pc[i]);
         sprintf(sprintfbuffer, " %02x", pc[i]);
@@ -366,10 +443,10 @@ void hexDump(const char *desc, void *addr, unsigned int offset, int len)
 
         // And store a printable ASCII character for later.
         if ((pc[i] < 0x20) || (pc[i] > 0x7e))
-            buff[i % 16] = '.';
+            ascii_buffer[i % 16] = '.';
         else
-            buff[i % 16] = pc[i];
-        buff[(i % 16) + 1] = '\0';
+            ascii_buffer[i % 16] = pc[i];
+        ascii_buffer[(i % 16) + 1] = '\0';
     }
 
     // Pad out last line if not exactly 16 characters.
@@ -383,5 +460,5 @@ void hexDump(const char *desc, void *addr, unsigned int offset, int len)
     // And print the final ASCII bit.
     //printf("  %s\n", buff);
     Serial.print(" | ");
-    Serial.println((char *)buff);
+    Serial.println((char *)ascii_buffer);
 }
