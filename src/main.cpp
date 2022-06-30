@@ -30,12 +30,17 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>
+
 #include "pin_definitions.hpp"
 
 #define LED 13
 //#define LATCH 9
 uint8_t buffer[256];
+uint8_t prgBuffer[256];
+bool inputAvailable = false;
+String inputString;
 
+int programFile(const char *path, uint16_t adr);
 void hexDump(const char *desc, void *addr, unsigned int offset, int len);
 
 DECLARE_PIN (CE_pin, D, 2)
@@ -292,7 +297,7 @@ void erase()
     disable_A9_HV();
 }
 
-void blank_check(uint16_t max_address)
+bool blank_check(uint16_t max_address, uint16_t *adr_fail)
 {
     uint16_t address = 0;
     uint8_t b = 0;
@@ -310,122 +315,245 @@ void blank_check(uint16_t max_address)
     } while ( address++ < max_address );
     set(OE_pin | CE_pin);
     if ( b != 0xFF ) {
-        Serial.print("Erasing failed on address: ");
-        Serial.println(address-1, HEX);
+        if ( adr_fail )
+            *adr_fail = address;
+        return false;
     }
-    else Serial.println("Erasing ok!");
+    return true;
 }
 
-void programm( uint16_t address, uint8_t *buf, int len)
+bool program( uint16_t address, uint8_t *buf, int len)
 {
     int offset = 0;
-
-    eeprom_set_data_out();
+    uint8_t b = 0xFF;
+    int loops = 0;
+    
     set(OE_pin | CE_pin);
+    eeprom_set_data_out(); 
     enable_OE_VPP();    
     do
     {
         eeprom_set_address(address + offset);
         delayMicroseconds(3);       // Tds
-        eeprom_data_out(buf[offset++]);
+        eeprom_data_out(buf[offset]);
         delayMicroseconds(5);       // Tas
         write(CE_pin, 0);
-        delayMicroseconds(100);     // Tpwp
+        delayMicroseconds(95);     // Tpwp (funktioniert auch mit 5 us!)
         write(CE_pin, 1);
-        delayMicroseconds(3); // Tdh / Tah / Toeh
-
-    } while (offset < len);
+        delayMicroseconds(3);       // Tdh / Tah / Toeh
+             //verify
+            write(OE_pin, 0);
+            eeprom_set_data_in();
+            disable_OE_VPP();
+            write(CE_pin, 0);
+            delayMicroseconds(30);      // Tdv1
+            b = eeprom_data_in();
+            set(OE_pin | CE_pin);
+            enable_OE_VPP();
+            delayMicroseconds(5);
+            eeprom_set_data_out();
+            //Serial.print(b != buf[offset] ? "-" : "+"); 
+        if ( b != buf[offset] ) 
+            loops++;
+        else {
+            offset++;
+            loops = 0;
+        }   
+    } while (offset < len && loops < 20 );
     set(OE_pin | CE_pin);
     disable_OE_VPP();
     eeprom_set_data_in();
+    return (loops == 0); 
 }
+
 
 void setup()
 {
+    
+    inputString.reserve(20);
+    memset(buffer, 0x55, sizeof(buffer));
+    memset(prgBuffer, 0xFF, sizeof(prgBuffer));
+    memcpy(prgBuffer, "Das ist ein Test", 16);
+
     // initialize serial
     Serial.begin(115200);
 
     eeprom_init_pins();
     eeprom_set_data_in();
-    
+    Serial.print("Stack size1: ");
+    Serial.println(RAMEND - SP);
+    Serial.println("EEPrommer V0");   
     SPI.begin();
-    //SPI.beginTransaction(SPISettings(100000, MSBFIRST, SPI_MODE0));
-    //delay(500);
 
     if ( !SD.begin(SS) )
-        Serial.println("Initialization failed");
+        Serial.println("SD Initialization failed");
 
-    if (SD.exists(const_cast<char *>("test.txt")) )
-        Serial.println(PSTR("ok"));
+
+    if (SD.exists(const_cast<char *>("dump.txt")) )
+         Serial.println(PSTR("ok"));
     else
         Serial.println(PSTR("fail"));
-
-    File f = SD.open("test.txt");
+    Serial.print("Stack size2: ");
+    Serial.println(RAMEND - SP);
+    File f = SD.open("dump.txt");
+    Serial.print("Stack size3: ");
+    Serial.println(RAMEND - SP);
     f.seek(0);
     int len = f.readBytes(buffer, 20);
     buffer[len] = 0;
-    Serial.println((char*)buffer);
     hexDump("Hexdump", buffer, 0, len);
     f.close();
-    //hexDump("SDread", buffer, 0, sizeof(buffer));
-    // eeprom_read_to_buffer(0x0000);
-    programm(0x0040, buffer, 20);  
-
-    eeprom_read_bytes_at(0x0000, buffer, sizeof(buffer));
-    hexDump("Test", buffer, 0x0000, sizeof(buffer));
-
-    read_id();
-
-    delay(1000);
-    Serial.println("Erasing ...");
-    erase();
-
-    delay(500);
-    Serial.println("Reading ...");
-    eeprom_read_bytes_at(0x0000, buffer, sizeof(buffer));
-    hexDump("after Erase", buffer, 0x0000, sizeof(buffer));
-    Serial.println("ende");
-    //blank_check(0xFFFF);
-    // bool success = false;
-    // unsigned id = eeprom_read_id(&success);
-    // Serial.println(id, HEX);
 }
 
 // the loop function runs over and over again forever
 void loop()
 {
-    // Serial.println("disable_OE_VPP()");     disable_OE_VPP();
-    // delay(3000);
-    // Serial.println("eeprom_output_enable()");     eeprom_output_enable();
-    // delay(3000);
-    // Serial.println("eeprom_output_disable()");  eeprom_output_disable();
-    // delay(3000);
-    // Serial.println("enable_OE_VPP()");    enable_OE_VPP();
-    // delay(3000);
-    // Serial.println("eeprom_output_enable()");    eeprom_output_enable();
-    // delay(3000);
-    // Serial.println("eeprom_output_disable()");    eeprom_output_disable();
-    // delay(3000);
-    // eeprom_set_address(0x703D);
-    // delay(100);  
-    // eeprom_set_address(0x8FC2);    
-    // delay(100);  
-    // for (int i = 0; i <= 3; i++)
-    // {
-        
-        // eeprom_set_data_in();
-        // Serial.print(eeprom_data_in(), HEX); Serial.print(" - ");
-        // Serial.println(read(DATA_low), HEX);
-        // Serial.println(DATA_low.mask, HEX);
+    static uint16_t adr = 0;
+    static uint16_t nextAdr = 0;
+    //File f;
 
-        //write(LATCH_pin, 0);
-        //digitalWrite(LATCH, LOW);  // Disable any internal transference in the SN74HC595
-        //SPI.transfer(i);           // Transfer data to the SN74HC595
-        //write(LATCH_pin, 1);
-        //digitalWrite(LATCH, HIGH); // Start the internal data transference in the SN74HC595
-        //delay(1000);               // Wait for next iteration
-    // }
+    if ( inputAvailable ) {
+        Serial.println(inputString);
+        inputString.trim();
+        switch (inputString[0]) {
+            case 'a':
+            case 'A': 
+                if (inputString[1] == 'x' || inputString[1] == 'X' )
+                    nextAdr = adr = strtoul(inputString.substring(2).c_str(), 0, 16);
+                else
+                    nextAdr = adr = inputString.substring(1).toInt();
+                Serial.print("Adresse (hex) = "); Serial.println(adr, HEX);
+                //Serial.println(adr, DEC);
+                break;
+            case 'h':
+            case 'H':
+                Serial.println(adr, HEX);
+                hexDump("dump", buffer, adr, sizeof(buffer));
+                break;
+            case 'e':
+            case 'E':
+                Serial.print("Erasing...");
+                erase();
+                if ( !blank_check(0xFFFF, 0) )
+                    Serial.println (" failed");
+                else 
+                    Serial.println(" ok");
+            break;
+            case 'r':
+                eeprom_read_bytes_at(adr, buffer, sizeof(buffer));
+                hexDump("read", buffer, adr, sizeof(buffer));
+                nextAdr = adr + sizeof(buffer);
+                break;
+            case 'n':
+                eeprom_read_bytes_at(nextAdr, buffer, sizeof(buffer));
+                hexDump("next read", buffer, nextAdr, sizeof(buffer));
+                nextAdr += sizeof(buffer);
+                break;
+            case 'p':
+                hexDump("prgBuffer", prgBuffer, 0, sizeof(prgBuffer));
+                Serial.print("Programming at "); Serial.println(adr, HEX);
+                if ( !program(adr, prgBuffer, sizeof(prgBuffer)) )
+                    Serial.println("programming fails");
+                break;
+            case 'b':
+                uint16_t fail;
+                Serial.print("Blank check ");
+                if ( blank_check(0xFFFF, &fail) )
+                    Serial.println("ok!");
+                else {
+                    Serial.print("failed on address ");
+                    Serial.println(fail, HEX);
+                } 
+                break;
+            case 'f':
+                int rc;
+                
+                rc = programFile(inputString.substring(1).c_str(), adr);
+                //rc = programFile("test.txt", adr);
+                if ( rc < 0 ) {
+                    Serial.print("return code = "); 
+                    Serial.println(rc);
+                }
+                break;
+            default:
+                Serial.println("?");
+        } 
+        inputString = "";
+        inputAvailable = false;
+    }
+}
 
+void serialEvent()
+{
+    int len;
+    while (Serial.available() && !inputAvailable )
+    {
+        char inChar = (char)Serial.read();
+        // Serial.println(int(inChar));
+        switch (inChar) {
+            case '\n':
+                inputAvailable = true;
+                break;
+            case '\b':
+                if ( (len = inputString.length()) > 0 )
+                    inputString.remove(len-1);
+                    // fall thru 
+            case '\r':  
+                break;
+            default:
+                inputString += inChar;
+        } 
+    }
+}
+
+int programFile(const char *path, uint16_t adr)
+{
+    int file_size;
+    int bytes_written = 0;
+    Serial.println(path);
+    if (!SD.exists(const_cast<char *>(path)))
+        return -1;
+    
+    File f = SD.open("dump.txt");
+    Serial.println(f.size());
+    Serial.print("Stack size: ");
+    Serial.println(RAMEND - SP);
+    if ( !f )
+        return -2;
+    file_size = f.size();
+    if ((unsigned int)file_size > (0xFFFF - adr)) {
+        f.close();
+        return -3;
+    }
+    Serial.print("File: ");
+    Serial.print(path);
+    Serial.print(" / Size: ");
+    Serial.println(file_size);
+    //f.seek(0);
+    Serial.print("Programming ... ");
+    while (f.available())
+    {
+        int bytes_readed = f.readBytes(buffer, sizeof(buffer));
+        if (bytes_readed)
+        {
+            if (program(adr, buffer, bytes_readed))
+            {
+                Serial.print("#");
+                adr += bytes_readed;
+                bytes_written += bytes_readed;
+            }
+            else
+            {
+                f.close();
+                return -4;
+            }
+        }
+    }
+    Serial.println();
+    Serial.print(bytes_written);
+    Serial.println(" bytes written");
+    f.close();
+    return bytes_written;
 }
 
 void hexDump(const char *desc, void *addr, unsigned int offset, int len)
