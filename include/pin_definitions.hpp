@@ -390,6 +390,7 @@ inline typename port_type<port>::type get_port( const port_tag &tag)
         }
     };
 
+    
     /// This operator will logical-or the value with the given register.
     /// operator to be used with for_each_port_operator
     struct set_bits
@@ -555,7 +556,9 @@ inline typename port_type<port>::type get_port( const port_tag &tag)
         detail::for_each_port_operator<typename list_builder::as_cons, reset_bits, tag_ddr>::operate();
         detail::for_each_port_operator<typename list_builder::as_cons, reset_bits, tag_port>::operate();
     }
+
 }
+
 
 
 #pragma GCC diagnostic push
