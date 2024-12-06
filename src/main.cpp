@@ -39,9 +39,7 @@ bool inputAvailable = false;
 String inputString;
 bool confirmation_needed = false;
 bool confirmation_given = false;
-
-    int
-    programFile(const char *path, uint16_t adr);
+int32_t programFile(const char *path, uint16_t adr);
 void hexDump(const char *desc, void *addr, unsigned int offset, int len);
 
 DECLARE_PIN (CE_pin, D, 2)
@@ -100,6 +98,8 @@ void eeprom_set_data_out() {
     make_output(DATA_high); 
 }
 void eeprom_set_data_in() { // ohne pullup
+    //make_input_with_pull_ups(DATA_low);
+    //make_input_with_pull_ups(DATA_high); 
     make_input_without_pull_ups(DATA_low);
     make_input_without_pull_ups(DATA_high); 
 }
@@ -176,6 +176,46 @@ void read_id() {
     Serial.println(id_byte2, HEX);
 }
 
+uint16_t read_id_new()
+{
+    uint8_t id_byte1 = 0;
+    uint8_t id_byte2 = 0;
+
+    uint8_t bl, bh;
+
+    eeprom_set_data_in();
+    set(OE_pin | CE_pin);
+    eeprom_set_address(0);
+    enable_A9_HV();
+    delayMicroseconds(5);
+    write(CE_pin, 0);
+
+    delayMicroseconds(3);
+    write(OE_pin, 0);
+    delayMicroseconds(3); // Toe
+    bl = read(DATA_low);
+    bh = read(DATA_high);
+    id_byte1 = eeprom_data_in();
+    set(OE_pin | CE_pin);
+    disable_A9_HV();
+    
+    delayMicroseconds(100);
+    eeprom_set_address(1);
+    enable_A9_HV();
+    delayMicroseconds(5);
+    write(CE_pin, 0);
+    delayMicroseconds(3);
+    write(OE_pin, 0);
+    delayMicroseconds(3); // Toe
+    id_byte2 = eeprom_data_in();
+    set(OE_pin | CE_pin); 
+    delayMicroseconds(3);                       // feste Verzoegerung ca. 500 ns einbauen (mit cli)
+    disable_A9_HV();
+    Serial.println(bl, HEX);
+    Serial.println(bh,HEX);
+    return  (id_byte2 + (id_byte1 << 8));
+}
+
 void erase()
 {
     eeprom_set_data_in();
@@ -233,17 +273,21 @@ bool program( uint16_t address, uint8_t *buf, int len)
         eeprom_data_out(buf[offset]);
         delayMicroseconds(5);       // Tas
         write(CE_pin, 0);
-        delayMicroseconds(95);     // Tpwp (funktioniert auch mit 5 us!)
+// AP 95 bei EEPROM, 1000 bei EPROM
+        delayMicroseconds(1000);     // Tpwp (funktioniert auch mit 5 us!)
         write(CE_pin, 1);
         delayMicroseconds(3);       // Tdh / Tah / Toeh
              //verify
             write(OE_pin, 0);
+delayMicroseconds(3);
             eeprom_set_data_in();
             disable_OE_VPP();
+delayMicroseconds(3);
             write(CE_pin, 0);
-            delayMicroseconds(30);      // Tdv1
+            delayMicroseconds(30);      // Tdv1 30
             b = eeprom_data_in();
             set(OE_pin | CE_pin);
+delayMicroseconds(3);
             enable_OE_VPP();
             delayMicroseconds(5);
             eeprom_set_data_out();
@@ -261,21 +305,21 @@ bool program( uint16_t address, uint8_t *buf, int len)
     return (loops == 0); 
 }
 
-int programFile(const char *path, uint16_t adr)
+int32_t programFile(const char *path, uint16_t adr)
 {
-    int file_size;
-    int bytes_written = 0;
-    Serial.println(path);
+    uint32_t file_size;
+    int32_t bytes_written = 0;
+    //Serial.println(path);
     if (!SD.exists(const_cast<char *>(path)))
         return -1;
 
     File f = SD.open(path);
-    Serial.println(f.size());
+    //Serial.println(f.size());
 
     if (!f)
         return -2;
     file_size = f.size();
-    if ((unsigned int)file_size > (0xFFFF - adr))
+    if ( (file_size + adr-1 ) > 0x0000FFFF )
     {
         f.close();
         return -3;
@@ -288,7 +332,7 @@ int programFile(const char *path, uint16_t adr)
     Serial.print("Programming ... ");
     while (f.available())
     {
-        int bytes_readed = f.readBytes(buffer, sizeof(buffer));
+        size_t bytes_readed = f.readBytes(buffer, sizeof(buffer));
         if (bytes_readed)
         {
             if (program(adr, buffer, bytes_readed))
@@ -319,6 +363,7 @@ bool confirmation()
     // while ( confirmation_needed ); 
     // Serial.println();
     // return confirmation_given;
+    return false;
 }
 
 void setup()
@@ -328,6 +373,7 @@ void setup()
 
     // initialize serial
     Serial.begin(115200);
+    while ( !Serial );
 
     eeprom_init_pins();
     eeprom_set_data_in();
@@ -348,15 +394,19 @@ void loop()
     static uint16_t nextAdr = 0;
     
     if ( inputAvailable ) {
-        Serial.println(inputString);
+        //Serial.println(inputString);
         inputString.trim();
+    // todo: Leerzeichen zu Parametern überlesen
+    // read kann adresse als Argument übernehmen
+    // fill Befehl
         switch (inputString[0]) {
             case 'a':
             case 'A': 
-                if (inputString[1] == 'x' || inputString[1] == 'X' )
-                    nextAdr = adr = strtoul(inputString.substring(2).c_str(), 0, 16);
+            // to do aktuelle adresse (start der letzten r,n anweisung) anzeigen, wenn keine Zahl eingegeben wurde
+                if (inputString[1] != '#' )     // # dezimal, sonst Hex
+                    nextAdr = adr = strtoul(inputString.substring(1).c_str(), 0, 16);
                 else
-                    nextAdr = adr = inputString.substring(1).toInt();
+                    nextAdr = adr = inputString.substring(2).toInt();
                 Serial.print("Adresse (hex) = "); Serial.println(adr, HEX);
                 break;
             case 'h':
@@ -373,6 +423,11 @@ void loop()
                 else 
                     Serial.println(" ok");
             break;
+            case 'i':
+                Serial.print("ID = ");
+                //Serial.println(read_id_new(), HEX);
+                read_id();
+                break;
             case 'r':
                 eeprom_read_bytes_at(adr, buffer, sizeof(buffer));
                 hexDump("read", buffer, adr, sizeof(buffer));
